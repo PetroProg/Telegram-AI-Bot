@@ -1,0 +1,20 @@
+services:
+  tg-ai-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tg_ai_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - news-ai_default
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  news-ai_default:
+    external: true
