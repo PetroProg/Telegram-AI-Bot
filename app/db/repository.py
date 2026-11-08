@@ -67,11 +67,11 @@ async def create_chat(
     )
     session.add(chat)
     await session.commit()
-    await session.refresh(chat)
 
     # Set as active chat automatically
     await set_active_chat(session, user_id, chat.id)
-    return chat
+    # Return chat with eagerly loaded model relation
+    return await get_chat(session, chat.id)
 
 
 async def get_chat(session: AsyncSession, chat_id: uuid.UUID) -> Optional[Chat]:

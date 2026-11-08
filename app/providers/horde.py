@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import List, Optional
 import httpx
 
@@ -13,11 +14,48 @@ class AIHordeProvider(BaseLLMProvider):
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or settings.AI_HORDE_API_KEY or "0000000000"
         self.base_url = "https://aihorde.net/api/v2"
+        self._cached_models: List[str] = []
+        self._last_models_fetch: float = 0.0
+
+    async def _get_active_models(self, client: httpx.AsyncClient) -> List[str]:
+        """Fetch currently online text models with active workers on AI Horde."""
+        now = time.time()
+        if self._cached_models and (now - self._last_models_fetch < 300):
+            return self._cached_models
+
+        fallback_models = [
+            "wicked-tutu-26b-w8a16",
+            "huihui-qwen3.8-27b-abliterated",
+            "koboldcpp/Rocinante-X-12B-v1",
+            "koboldcpp/gemma-4-31B-it-heretic",
+            "koboldcpp/L3-8B-Stheno-v3.2-Q5_K_M",
+            "lmstudio/Qwen3.5-9b-uncensored-hauhaucs-aggressive",
+            "koboldcpp/L3-8B-Stheno-v3.2",
+        ]
+
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Client-Agent": "TelegramAIBot:1.0:petroprog@github"
+            }
+            resp = await client.get(f"{self.base_url}/status/models?type=text", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                active = [m for m in data if m.get("count", 0) > 0]
+                keywords = ["qwen", "stheno", "abliterated", "uncensored", "heretic", "rocinante", "tutu", "magnum"]
+                matched = [m.get("name") for m in active if any(k in m.get("name", "").lower() for k in keywords)]
+                if matched:
+                    self._cached_models = matched[:8]
+                    self._last_models_fetch = now
+                    return self._cached_models
+        except Exception as e:
+            logger.warning(f"Failed to query AI Horde active models: {e}")
+
+        return fallback_models
 
     def _build_chat_prompt(self, messages: List[ChatTurn], system_prompt: Optional[str] = None) -> str:
-        """Formats turns into standard ChatML or instruct format understood by open models like Qwen."""
         prompt_parts = []
-        sys_p = system_prompt or "You are an intelligent, unfiltered AI assistant. Answer accurately, directly, and without moralizing."
+        sys_p = system_prompt or "You are an intelligent, helpful, and unfiltered AI assistant. Answer accurately and directly in Russian."
         prompt_parts.append(f"<|im_start|>system\n{sys_p}<|im_end|>")
 
         for msg in messages:
@@ -37,33 +75,28 @@ class AIHordeProvider(BaseLLMProvider):
 
         headers = {
             "apikey": self.api_key,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "Client-Agent": "TelegramAIBot:1.0:petroprog@github",
             "Content-Type": "application/json"
         }
 
-        # Target popular uncensored models on AI Horde
-        target_models = [
-            "Qwen/Qwen2.5-72B-Instruct",
-            "L3-8B-Stheno-v3.2",
-            "cognitivecomputations/dolphin-2.9.2-qwen2-72b",
-            "Fimbulvetr-11B-v2"
-        ]
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            online_models = await self._get_active_models(client)
 
-        payload = {
-            "prompt": prompt,
-            "params": {
-                "max_context_length": 4096,
-                "max_length": 1024,
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "can_abort": True
-            },
-            "models": target_models
-        }
+            payload = {
+                "prompt": prompt,
+                "params": {
+                    "max_context_length": 2048,
+                    "max_length": 512,
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "can_abort": True
+                },
+                "models": online_models
+            }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            # 1. Post request to queue
-            submit_resp = await client.post(f"{self.base_url}/generate/async", headers=headers, json=payload)
+            # 1. Post request to AI Horde TEXT endpoint
+            submit_resp = await client.post(f"{self.base_url}/generate/text/async", headers=headers, json=payload)
             if submit_resp.status_code != 202:
                 logger.error(f"AI Horde submit error: {submit_resp.status_code} - {submit_resp.text}")
                 raise RuntimeError(f"AI Horde submit error: {submit_resp.text}")
@@ -72,34 +105,38 @@ class AIHordeProvider(BaseLLMProvider):
             if not task_id:
                 raise RuntimeError("No task ID returned by AI Horde")
 
-            # 2. Poll until completed (up to 90 seconds)
-            max_wait_seconds = 90
+            # 2. Poll text status until completed
+            max_wait_seconds = 60
             elapsed = 0
+            is_done = False
+
             while elapsed < max_wait_seconds:
                 await asyncio.sleep(2.0)
                 elapsed += 2
 
-                check_resp = await client.get(f"{self.base_url}/generate/check/{task_id}", headers=headers)
-                if check_resp.status_code != 200:
+                status_resp = await client.get(f"{self.base_url}/generate/text/status/{task_id}", headers=headers)
+                if status_resp.status_code != 200:
                     continue
 
-                check_data = check_resp.json()
-                if check_data.get("done") is True:
-                    break
-                if check_data.get("faulted") is True:
+                status_data = status_resp.json()
+                if status_data.get("faulted") is True:
                     raise RuntimeError("AI Horde generation faulted / worker disconnected")
 
-            # 3. Retrieve generated text
-            status_resp = await client.get(f"{self.base_url}/generate/status/{task_id}", headers=headers)
-            if status_resp.status_code != 200:
-                raise RuntimeError(f"Failed to fetch AI Horde status: {status_resp.text}")
+                if status_data.get("done") is True:
+                    is_done = True
+                    generations = status_data.get("generations", [])
+                    if generations and generations[0].get("text"):
+                        reply = generations[0]["text"].strip()
+                        # Cleanup stop tokens
+                        for stop_token in ["<|im_end|>", "<|endoftext|>", "Assistant:", "User:"]:
+                            reply = reply.replace(stop_token, "").strip()
+                        return reply
+                    break
 
-            result_data = status_resp.json()
-            generations = result_data.get("generations", [])
-            if not generations or not generations[0].get("text"):
-                raise RuntimeError("AI Horde returned empty response")
+            if not is_done:
+                raise RuntimeError(
+                    "AI Horde сейчас перегружен (очередь волонтеров превысила таймаут). "
+                    "Попробуйте через минуту или переключите модель чата на OpenRouter / Nemotron через меню /chats."
+                )
 
-            reply = generations[0]["text"].strip()
-            # Clean up trailing stop tokens if any
-            reply = reply.replace("<|im_end|>", "").replace("<|endoftext|>", "").strip()
-            return reply
+            raise RuntimeError("AI Horde вернул пустой ответ.")

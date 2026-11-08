@@ -219,14 +219,17 @@ async def fsm_chat_title_received(message: Message, state: FSMContext):
             model_id=model_id,
             title=title
         )
+        model_name = chat.model.display_name if chat.model else chat.model_id
+        chat_id = chat.id
+        chat_title = chat.title
 
     text = (
-        f"🎉 **Диалог создан и активирован!**\n\n"
-        f"📌 Название: `{chat.title}`\n"
-        f"🤖 Модель: {chat.model.display_name if chat.model else chat.model_id}\n\n"
+        f"🎉 **Ваш чат успешно создан и активирован!**\n\n"
+        f"📌 Название: `{chat_title}`\n"
+        f"🤖 Модель: {model_name}\n\n"
         "Напиши сообщение или отправь фото, чтобы начать общение!"
     )
-    kb = get_chat_actions_keyboard(chat.id, is_active=True)
+    kb = get_chat_actions_keyboard(chat_id, is_active=True)
     await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 
@@ -253,7 +256,8 @@ async def fsm_rename_received(message: Message, state: FSMContext):
         await repository.rename_chat(session, chat_id, new_title)
         chat = await repository.get_chat(session, chat_id)
         user = await repository.get_or_create_user(session, message.from_user.id)
+        chat_title = chat.title if chat else new_title
+        is_active = (user.active_chat_id == chat_id)
 
-    is_active = (user.active_chat_id == chat_id)
     kb = get_chat_actions_keyboard(chat_id, is_active=is_active)
-    await message.answer(f"✅ Чат успешно переименован в `{chat.title}`!", reply_markup=kb, parse_mode="Markdown")
+    await message.answer(f"✅ Чат успешно переименован в `{chat_title}`!", reply_markup=kb, parse_mode="Markdown")
