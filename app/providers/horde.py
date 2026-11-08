@@ -86,8 +86,8 @@ class AIHordeProvider(BaseLLMProvider):
             payload = {
                 "prompt": prompt,
                 "params": {
-                    "max_context_length": 2048,
-                    "max_length": 512,
+                    "max_context_length": 4096,
+                    "max_length": 1200,
                     "temperature": 0.7,
                     "top_p": 0.9,
                     "can_abort": True

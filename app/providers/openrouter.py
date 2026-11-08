@@ -55,6 +55,7 @@ class OpenRouterProvider(BaseLLMProvider):
             "model": clean_model,
             "messages": formatted_messages,
             "temperature": 0.7,
+            "max_tokens": 2048,
         }
 
         async with httpx.AsyncClient(timeout=90.0) as client:
