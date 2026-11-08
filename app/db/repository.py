@@ -130,14 +130,13 @@ async def clear_chat_history(session: AsyncSession, chat_id: uuid.UUID):
 
 async def delete_chat(session: AsyncSession, user_id: int, chat_id: uuid.UUID):
     # If active, unset active_chat_id
-    user_stmt = select(User).where(User.id == user_id)
-    user_res = await session.execute(user_stmt)
-    user = user_res.scalar_one_or_none()
-    if user and user.active_chat_id == chat_id:
-        user.active_chat_id = None
-
-    del_stmt = delete(Chat).where(Chat.id == chat_id)
-    await session.execute(del_stmt)
+    await session.execute(
+        update(User)
+        .where(User.id == user_id, User.active_chat_id == chat_id)
+        .values(active_chat_id=None)
+    )
+    # Delete the chat and all its messages (cascade)
+    await session.execute(delete(Chat).where(Chat.id == chat_id))
     await session.commit()
 
 

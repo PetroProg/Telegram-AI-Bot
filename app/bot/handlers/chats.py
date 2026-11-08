@@ -8,6 +8,7 @@ from app.bot.keyboards.inline import (
     get_chats_pagination_keyboard,
     get_chat_actions_keyboard,
     get_delete_confirm_keyboard,
+    get_delete_select_keyboard,
     get_models_selection_keyboard
 )
 from app.db.session import async_session_factory
@@ -50,6 +51,21 @@ async def cb_chats_page(query: CallbackQuery):
 
     kb = get_chats_pagination_keyboard(chats, page=page, total_count=total, active_chat_id=user.active_chat_id)
     await query.message.edit_text("📁 **Твои диалоги:**\nВыбери чат для продолжения или настройки:", reply_markup=kb, parse_mode="Markdown")
+    await query.answer()
+
+
+@router.callback_query(F.data.startswith("chats:delete_menu:"))
+async def cb_chats_delete_menu(query: CallbackQuery):
+    page = int(query.data.split(":")[2])
+    async with async_session_factory() as session:
+        chats, total = await repository.list_user_chats(session, query.from_user.id, page=page, page_size=5)
+
+    if not chats:
+        await query.answer("У тебя нет созданных чатов.", show_alert=True)
+        return
+
+    kb = get_delete_select_keyboard(chats, page=page, total_count=total)
+    await query.message.edit_text("🗑 **Выбери диалог, который хочешь удалить:**", reply_markup=kb, parse_mode="Markdown")
     await query.answer()
 
 

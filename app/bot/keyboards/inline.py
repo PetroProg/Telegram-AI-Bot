@@ -38,10 +38,55 @@ def get_chats_pagination_keyboard(
 
     # Action row
     buttons.append([
-        InlineKeyboardButton(text="➕ Создать новый диалог", callback_data="chat:new")
+        InlineKeyboardButton(text="➕ Новый диалог", callback_data="chat:new"),
+        InlineKeyboardButton(text="🗑 Удалить диалог...", callback_data="chats:delete_menu:1")
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_delete_select_keyboard(
+    chats: List[Chat],
+    page: int,
+    total_count: int,
+    page_size: int = 5
+) -> InlineKeyboardMarkup:
+    total_pages = max(1, math.ceil(total_count / page_size))
+    buttons = []
+
+    for chat in chats:
+        buttons.append([
+            InlineKeyboardButton(text=f"❌ Удалить «{chat.title[:20]}»", callback_data=f"chat:delete_confirm:{chat.id}")
+        ])
+
+    nav_row = []
+    if page > 1:
+        nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"chats:delete_menu:{page - 1}"))
+    nav_row.append(InlineKeyboardButton(text=f"📄 {page}/{total_pages}", callback_data="noop"))
+    if page < total_pages:
+        nav_row.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"chats:delete_menu:{page + 1}"))
+
+    if nav_row:
+        buttons.append(nav_row)
+
+    buttons.append([
+        InlineKeyboardButton(text="⬅️ К списку чатов", callback_data="chats:list")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_active_chat_keyboard(chat_id: uuid.UUID) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🗑 Удалить этот чат", callback_data=f"chat:delete_confirm:{chat_id}"),
+            InlineKeyboardButton(text="🧹 Очистить контекст", callback_data=f"chat:clear:{chat_id}")
+        ],
+        [
+            InlineKeyboardButton(text="🔄 Сменить модель", callback_data=f"chat:change_model:{chat_id}"),
+            InlineKeyboardButton(text="📁 Все чаты", callback_data="chats:list")
+        ]
+    ])
 
 
 def get_chat_actions_keyboard(chat_id: uuid.UUID, is_active: bool) -> InlineKeyboardMarkup:

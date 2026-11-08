@@ -4,7 +4,13 @@ from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 
 from app.bot.keyboards.reply import get_main_reply_keyboard
-from app.bot.keyboards.inline import get_chats_pagination_keyboard, get_models_selection_keyboard
+from app.bot.keyboards.inline import (
+    get_chats_pagination_keyboard,
+    get_models_selection_keyboard,
+    get_active_chat_keyboard,
+    get_delete_confirm_keyboard,
+    get_delete_select_keyboard
+)
 from app.db.session import async_session_factory
 from app.db import repository
 
@@ -92,12 +98,38 @@ async def handle_active_chat(message: Message):
     text = (
         f"🎯 **Активный диалог:**\n"
         f"📌 Название: `{active_chat.title}`\n"
-        f"🤖 Модель: {active_chat.model.display_name}\n"
+        f"🤖 Модель: {active_chat.model.display_name if active_chat.model else active_chat.model_id}\n"
         f"💬 Сообщений в памяти: {len(messages)}/10\n"
         f"📅 Создан: {active_chat.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
-        "Все новые текстовые сообщения и фото отправляются в этот контекст."
+        "Выбери действие для этого чата:"
     )
-    await message.answer(text, parse_mode="Markdown")
+    kb = get_active_chat_keyboard(active_chat.id)
+    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+
+@router.message(Command("delete"))
+@router.message(Command("delete_chat"))
+async def handle_delete_command(message: Message):
+    async with async_session_factory() as session:
+        active_chat = await repository.get_active_chat(session, message.from_user.id)
+
+    if active_chat:
+        kb = get_delete_confirm_keyboard(active_chat.id)
+        await message.answer(
+            f"⚠️ **Удалить текущий активный чат «{active_chat.title}»?**\nВсе сообщения этого диалога будут стёрты.",
+            reply_markup=kb,
+            parse_mode="Markdown"
+        )
+    else:
+        async with async_session_factory() as session:
+            chats, total = await repository.list_user_chats(session, message.from_user.id, page=1, page_size=5)
+
+        if not chats:
+            await message.answer("📭 У тебя нет созданных чатов для удаления.")
+            return
+
+        kb = get_delete_select_keyboard(chats, page=1, total_count=total)
+        await message.answer("🗑 **Выбери чат для удаления:**", reply_markup=kb, parse_mode="Markdown")
 
 
 @router.message(F.text == "⚙️ Помощь")
