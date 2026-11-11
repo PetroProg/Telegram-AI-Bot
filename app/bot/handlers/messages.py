@@ -6,6 +6,7 @@ from aiogram.types import Message, BufferedInputFile
 from aiogram.enums import ChatAction
 
 from app.core.config import settings
+from app.core.text_utils import clean_model_response
 from app.db.session import async_session_factory
 from app.db import repository
 from app.providers.base import ChatTurn
@@ -28,28 +29,31 @@ async def keep_typing(bot: Bot, chat_id: int, stop_event: asyncio.Event):
             pass
 
 
-async def send_response_safely(message: Message, response_text: str):
+async def send_response_safely(message: Message, response_text: str) -> Optional[Message]:
     """
     Sends message to Telegram. If longer than 4096 characters, sends a short
     summary preview and attaches the full response as a .md document.
     """
-    if len(response_text) <= 4096:
+    cleaned = clean_model_response(response_text)
+    if not cleaned:
+        cleaned = "_(Пустой ответ от модели)_"
+
+    if len(cleaned) <= 4096:
         try:
-            await message.answer(response_text, parse_mode="Markdown")
+            return await message.answer(cleaned, parse_mode="Markdown")
         except Exception:
-            # Fallback to plain text if markdown parse fails
-            await message.answer(response_text)
+            return await message.answer(cleaned)
     else:
-        preview = response_text[:300] + "...\n\n📄 _Полный ответ превысил лимит Telegram (4096 симв.) и прикреплен в файле ниже:_"
+        preview = cleaned[:300] + "...\n\n📄 _Полный ответ превысил лимит Telegram (4096 симв.) и прикреплен в файле ниже:_"
         try:
             await message.answer(preview, parse_mode="Markdown")
         except Exception:
             await message.answer(preview)
 
         # Create .md file in-memory
-        file_bytes = response_text.encode("utf-8")
+        file_bytes = cleaned.encode("utf-8")
         doc = BufferedInputFile(file=file_bytes, filename="response.md")
-        await message.answer_document(document=doc, caption="💾 Полный ответ в формате Markdown")
+        return await message.answer_document(document=doc, caption="💾 Полный ответ в формате Markdown")
 
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -71,8 +75,10 @@ async def handle_user_text(message: Message, bot: Bot):
         model = active_chat.model
         sys_prompt = active_chat.system_prompt
 
-        # 1. Save user message
-        await repository.add_message(session, chat_id, role="user", content=user_text)
+        # 1. Save user message with telegram_message_id
+        await repository.add_message(
+            session, chat_id, role="user", content=user_text, telegram_message_id=message.message_id
+        )
 
         # 2. Fetch context (sliding window of last 10 messages)
         history = await repository.get_chat_context(session, chat_id, limit=settings.DEFAULT_CONTEXT_LIMIT)
@@ -93,12 +99,15 @@ async def handle_user_text(message: Message, bot: Bot):
             has_image=False
         )
 
-        # 5. Save assistant response
-        async with async_session_factory() as session:
-            await repository.add_message(session, chat_id, role="assistant", content=response_text)
+        # 5. Send to user
+        sent_msg = await send_response_safely(message, response_text)
 
-        # 6. Send to user
-        await send_response_safely(message, response_text)
+        # 6. Save assistant response with its telegram_message_id
+        bot_msg_id = sent_msg.message_id if sent_msg else None
+        async with async_session_factory() as session:
+            await repository.add_message(
+                session, chat_id, role="assistant", content=response_text, telegram_message_id=bot_msg_id
+            )
 
     except Exception as e:
         logger.exception("Error generating response")
@@ -127,8 +136,10 @@ async def handle_user_photo(message: Message, bot: Bot):
         model = active_chat.model
         sys_prompt = active_chat.system_prompt
 
-        # Save user message
-        await repository.add_message(session, chat_id, role="user", content=caption, has_image=True)
+        # Save user message with telegram_message_id
+        await repository.add_message(
+            session, chat_id, role="user", content=caption, has_image=True, telegram_message_id=message.message_id
+        )
 
         history = await repository.get_chat_context(session, chat_id, limit=settings.DEFAULT_CONTEXT_LIMIT)
 
@@ -156,10 +167,13 @@ async def handle_user_photo(message: Message, bot: Bot):
             has_image=True
         )
 
-        async with async_session_factory() as session:
-            await repository.add_message(session, chat_id, role="assistant", content=response_text)
+        sent_msg = await send_response_safely(message, response_text)
+        bot_msg_id = sent_msg.message_id if sent_msg else None
 
-        await send_response_safely(message, response_text)
+        async with async_session_factory() as session:
+            await repository.add_message(
+                session, chat_id, role="assistant", content=response_text, telegram_message_id=bot_msg_id
+            )
 
     except Exception as e:
         logger.exception("Error processing photo with model")

@@ -89,6 +89,7 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(16))  # 'user', 'assistant', 'system'
     content: Mapped[str] = mapped_column(Text)
     has_image: Mapped[bool] = mapped_column(Boolean, default=False)
+    telegram_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     chat: Mapped["Chat"] = relationship("Chat", back_populates="messages")

@@ -166,9 +166,17 @@ async def cb_chat_set_model(query: CallbackQuery):
 async def cb_chat_clear(query: CallbackQuery):
     chat_id = uuid.UUID(query.data.split(":")[2])
     async with async_session_factory() as session:
+        message_ids = await repository.get_chat_telegram_message_ids(session, chat_id)
         await repository.clear_chat_history(session, chat_id)
 
-    await query.answer("🧹 История и контекст сообщений очищены!", show_alert=True)
+    # Physically delete stored messages in Telegram
+    for mid in message_ids:
+        try:
+            await query.bot.delete_message(chat_id=query.message.chat.id, message_id=mid)
+        except Exception:
+            pass
+
+    await query.answer("🧹 Все сообщения и контекст очищены!", show_alert=True)
     # Refresh view
     await cb_chat_view(query)
 

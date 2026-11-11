@@ -107,6 +107,45 @@ async def handle_active_chat(message: Message):
     await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 
+@router.message(Command("clear"))
+@router.message(Command("clear_chat"))
+async def handle_clear_command(message: Message, bot: Bot):
+    async with async_session_factory() as session:
+        active_chat = await repository.get_active_chat(session, message.from_user.id)
+        if not active_chat:
+            await message.answer("⚠️ У тебя нет активного диалога для очистки. Выбери чат: /chats")
+            return
+
+        chat_id = active_chat.id
+        chat_title = active_chat.title
+        # 1. Fetch all message IDs belonging to this chat
+        message_ids = await repository.get_chat_telegram_message_ids(session, chat_id)
+        # 2. Clear from database
+        await repository.clear_chat_history(session, chat_id)
+
+    # 3. Physically delete all messages in Telegram
+    deleted_count = 0
+    for mid in message_ids:
+        try:
+            await bot.delete_message(chat_id=message.chat.id, message_id=mid)
+            deleted_count += 1
+        except Exception:
+            pass
+
+    # Also delete the /clear command message itself
+    try:
+        await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+    except Exception:
+        pass
+
+    await message.answer(
+        f"🧹 **Лента переписки и контекст диалога «{chat_title}» полностью очищены!**\n"
+        f"Удалено сообщений: {deleted_count}.\n"
+        "Можно продолжать общение с чистого листа ✨",
+        parse_mode="Markdown"
+    )
+
+
 @router.message(Command("delete"))
 @router.message(Command("delete_chat"))
 async def handle_delete_command(message: Message):
@@ -139,6 +178,8 @@ async def handle_help(message: Message):
         "📖 **Справка по боту:**\n\n"
         "• Отправь **текст** — бот ответит в контексте активного чата.\n"
         "• Отправь **фото** — бот проанализирует его с помощью Vision модели.\n"
+        "• **/clear** — физически удалить сообщения диалога из Telegram и очистить контекст.\n"
+        "• **/delete** — быстро удалить активный чат целиком.\n"
         "• Если ответ превышает 4096 знаков — бот автоматически пришлет его удобным `.md` файлом.\n"
         "• Для переключения между диалогами используй кнопку **💬 Мои чаты**.\n"
         "• Создавай сколько угодно изолированных чатов под разные задачи!\n"

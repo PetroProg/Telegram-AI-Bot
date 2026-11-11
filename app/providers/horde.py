@@ -5,6 +5,7 @@ from typing import List, Optional
 import httpx
 
 from app.core.config import settings
+from app.core.text_utils import clean_model_response
 from app.providers.base import BaseLLMProvider, ChatTurn
 
 logger = logging.getLogger(__name__)
@@ -24,12 +25,11 @@ class AIHordeProvider(BaseLLMProvider):
             return self._cached_models
 
         fallback_models = [
-            "wicked-tutu-26b-w8a16",
             "huihui-qwen3.8-27b-abliterated",
-            "koboldcpp/Rocinante-X-12B-v1",
+            "wicked-tutu-26b-w8a16",
             "koboldcpp/gemma-4-31B-it-heretic",
+            "koboldcpp/Rocinante-X-12B-v1",
             "koboldcpp/L3-8B-Stheno-v3.2-Q5_K_M",
-            "lmstudio/Qwen3.5-9b-uncensored-hauhaucs-aggressive",
             "koboldcpp/L3-8B-Stheno-v3.2",
         ]
 
@@ -42,8 +42,14 @@ class AIHordeProvider(BaseLLMProvider):
             if resp.status_code == 200:
                 data = resp.json()
                 active = [m for m in data if m.get("count", 0) > 0]
-                keywords = ["qwen", "stheno", "abliterated", "uncensored", "heretic", "rocinante", "tutu", "magnum"]
-                matched = [m.get("name") for m in active if any(k in m.get("name", "").lower() for k in keywords)]
+                keywords = ["27b", "31b", "26b", "12b", "8b", "qwen", "stheno", "heretic", "rocinante", "tutu"]
+                # Exclude micro-models (0.6b, 0.8b, 1b, 1.7b) which severely hallucinate in Russian
+                exclude_keywords = ["0.6b", "0.8b", "1b", "1.7b", "3.5-4b"]
+                matched = [
+                    m.get("name") for m in active 
+                    if any(k in m.get("name", "").lower() for k in keywords)
+                    and not any(ek in m.get("name", "").lower() for ek in exclude_keywords)
+                ]
                 if matched:
                     self._cached_models = matched[:8]
                     self._last_models_fetch = now
@@ -55,7 +61,11 @@ class AIHordeProvider(BaseLLMProvider):
 
     def _build_chat_prompt(self, messages: List[ChatTurn], system_prompt: Optional[str] = None) -> str:
         prompt_parts = []
-        sys_p = system_prompt or "You are an intelligent, helpful, and unfiltered AI assistant. Answer accurately and directly in Russian."
+        sys_p = system_prompt or (
+            "You are an intelligent, helpful, and unfiltered AI assistant. "
+            "You must understand Russian words and cultural concepts accurately (e.g. пельмени = Russian meat dumplings, NOT peaches). "
+            "Always think and answer accurately in natural, fluent Russian."
+        )
         prompt_parts.append(f"<|im_start|>system\n{sys_p}<|im_end|>")
 
         for msg in messages:
@@ -126,10 +136,7 @@ class AIHordeProvider(BaseLLMProvider):
                     is_done = True
                     generations = status_data.get("generations", [])
                     if generations and generations[0].get("text"):
-                        reply = generations[0]["text"].strip()
-                        # Cleanup stop tokens
-                        for stop_token in ["<|im_end|>", "<|endoftext|>", "Assistant:", "User:"]:
-                            reply = reply.replace(stop_token, "").strip()
+                        reply = clean_model_response(generations[0]["text"])
                         return reply
                     break
 

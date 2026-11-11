@@ -145,13 +145,15 @@ async def add_message(
     chat_id: uuid.UUID,
     role: str,
     content: str,
-    has_image: bool = False
+    has_image: bool = False,
+    telegram_message_id: Optional[int] = None
 ) -> Message:
     msg = Message(
         chat_id=chat_id,
         role=role,
         content=content,
-        has_image=has_image
+        has_image=has_image,
+        telegram_message_id=telegram_message_id
     )
     session.add(msg)
     # Touch chat updated_at
@@ -160,6 +162,20 @@ async def add_message(
     await session.commit()
     await session.refresh(msg)
     return msg
+
+
+async def get_chat_telegram_message_ids(
+    session: AsyncSession,
+    chat_id: uuid.UUID
+) -> List[int]:
+    """Get all stored telegram message IDs for a chat to allow physical deletion in Telegram."""
+    stmt = (
+        select(Message.telegram_message_id)
+        .where(Message.chat_id == chat_id, Message.telegram_message_id.isnot(None))
+        .order_by(Message.created_at.asc())
+    )
+    result = await session.execute(stmt)
+    return [mid for mid in result.scalars().all() if mid is not None]
 
 
 async def get_chat_context(

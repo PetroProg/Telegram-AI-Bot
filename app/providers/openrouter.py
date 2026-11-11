@@ -3,6 +3,7 @@ from typing import List, Optional
 import httpx
 
 from app.core.config import settings
+from app.core.text_utils import clean_model_response
 from app.providers.base import BaseLLMProvider, ChatTurn
 
 logger = logging.getLogger(__name__)
@@ -70,4 +71,4 @@ class OpenRouterProvider(BaseLLMProvider):
                 raise RuntimeError("OpenRouter returned empty choices")
 
             reply = choices[0].get("message", {}).get("content", "")
-            return reply.strip()
+            return clean_model_response(reply)
