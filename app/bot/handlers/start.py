@@ -171,6 +171,63 @@ async def handle_delete_command(message: Message):
         await message.answer("🗑 **Выбери чат для удаления:**", reply_markup=kb, parse_mode="Markdown")
 
 
+async def _clear_physical_telegram_chat(
+    bot: Bot,
+    chat_id: int,
+    up_to_message_id: int,
+    max_scan: int = 200
+) -> None:
+    """Deletes recent Telegram messages in batches without touching DB context."""
+    min_id = max(1, up_to_message_id - max_scan + 1)
+    all_ids = list(range(up_to_message_id, min_id - 1, -1))
+
+    for i in range(0, len(all_ids), 50):
+        chunk = all_ids[i:i + 50]
+        try:
+            await bot.delete_messages(chat_id=chat_id, message_ids=chunk)
+        except Exception:
+            # Fallback to smaller chunks if a message in the batch is >48h old
+            any_deleted = False
+            for j in range(0, len(chunk), 10):
+                sub = chunk[j:j + 10]
+                try:
+                    await bot.delete_messages(chat_id=chat_id, message_ids=sub)
+                    any_deleted = True
+                except Exception:
+                    for mid in sub:
+                        try:
+                            await bot.delete_message(chat_id=chat_id, message_id=mid)
+                            any_deleted = True
+                        except Exception:
+                            pass
+            if not any_deleted:
+                break
+
+
+@router.message(F.text == "🫧 Очистить экран")
+@router.message(Command("clean"))
+async def handle_clean_screen(message: Message, bot: Bot, state: FSMContext):
+    await state.clear()
+    await _clear_physical_telegram_chat(
+        bot=bot,
+        chat_id=message.chat.id,
+        up_to_message_id=message.message_id,
+    )
+
+    async with async_session_factory() as session:
+        active_chat = await repository.get_active_chat(session, message.from_user.id)
+
+    if active_chat:
+        text = (
+            f"🫧 **Экран очищен!**\n"
+            f"Активный диалог `{active_chat.title}` и его память сохранены."
+        )
+    else:
+        text = "🫧 **Экран очищен!**\nВыбери или создай чат, чтобы начать общение."
+
+    await message.answer(text, reply_markup=get_main_reply_keyboard(), parse_mode="Markdown")
+
+
 @router.message(F.text == "⚙️ Помощь")
 @router.message(Command("help"))
 async def handle_help(message: Message):
@@ -178,6 +235,7 @@ async def handle_help(message: Message):
         "📖 **Справка по боту:**\n\n"
         "• Отправь **текст** — бот ответит в контексте активного чата.\n"
         "• Отправь **фото** — бот проанализирует его с помощью Vision модели.\n"
+        "• **🫧 Очистить экран** (`/clean`) — убрать сообщения из ленты Telegram (память ИИ сохраняется).\n"
         "• **/clear** — физически удалить сообщения диалога из Telegram и очистить контекст.\n"
         "• **/delete** — быстро удалить активный чат целиком.\n"
         "• Если ответ превышает 4096 знаков — бот автоматически пришлет его удобным `.md` файлом.\n"

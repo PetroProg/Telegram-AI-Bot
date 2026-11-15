@@ -9,7 +9,10 @@ def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
         ],
         [
             KeyboardButton(text="ℹ️ Активный чат"),
+            KeyboardButton(text="🫧 Очистить экран"),
+        ],
+        [
             KeyboardButton(text="⚙️ Помощь"),
-        ]
+        ],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
