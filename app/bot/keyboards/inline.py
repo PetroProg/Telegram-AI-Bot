@@ -16,13 +16,14 @@ def get_chats_pagination_keyboard(
     total_pages = max(1, math.ceil(total_count / page_size))
     buttons = []
 
-    # Chat rows
+    # Chat rows (1-tap activate + gear for settings)
     for chat in chats:
         prefix = "✅ " if active_chat_id and chat.id == active_chat_id else "💬 "
         model_name = chat.model.display_name.split()[0] if chat.model else "🤖"
         title_text = f"{prefix}{chat.title[:22]} ({model_name})"
         buttons.append([
-            InlineKeyboardButton(text=title_text, callback_data=f"chat:view:{chat.id}")
+            InlineKeyboardButton(text=title_text, callback_data=f"chat:quick_activate:{chat.id}:{page}"),
+            InlineKeyboardButton(text="⚙️", callback_data=f"chat:view:{chat.id}"),
         ])
 
     # Navigation buttons
@@ -39,7 +40,8 @@ def get_chats_pagination_keyboard(
     # Action row
     buttons.append([
         InlineKeyboardButton(text="➕ Новый диалог", callback_data="chat:new"),
-        InlineKeyboardButton(text="🗑 Удалить диалог...", callback_data="chats:delete_menu:1")
+        InlineKeyboardButton(text="🗑 Удалить...", callback_data="chats:delete_menu:1"),
+        InlineKeyboardButton(text="✖️ Закрыть", callback_data="menu:close"),
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -85,6 +87,9 @@ def get_active_chat_keyboard(chat_id: uuid.UUID) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="🔄 Сменить модель", callback_data=f"chat:change_model:{chat_id}"),
             InlineKeyboardButton(text="📁 Все чаты", callback_data="chats:list")
+        ],
+        [
+            InlineKeyboardButton(text="✖️ Закрыть", callback_data="menu:close")
         ]
     ])
 

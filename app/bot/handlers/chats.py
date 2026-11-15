@@ -1,5 +1,5 @@
 import uuid
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 
@@ -11,6 +11,11 @@ from app.bot.keyboards.inline import (
     get_delete_select_keyboard,
     get_models_selection_keyboard
 )
+from app.bot.ui import (
+    add_temp_message_id,
+    cleanup_menus_and_reset_state,
+    track_menu_message,
+)
 from app.db.session import async_session_factory
 from app.db import repository
 
@@ -19,6 +24,16 @@ router = Router(name="chats")
 
 @router.callback_query(F.data == "noop")
 async def cb_noop(query: CallbackQuery):
+    await query.answer()
+
+
+@router.callback_query(F.data == "menu:close")
+async def cb_menu_close(query: CallbackQuery, state: FSMContext):
+    await state.update_data(last_menu_msg_id=None)
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
     await query.answer()
 
 
@@ -38,7 +53,11 @@ async def cb_chats_list(query: CallbackQuery):
         return
 
     kb = get_chats_pagination_keyboard(chats, page=1, total_count=total, active_chat_id=user.active_chat_id)
-    await query.message.edit_text("📁 **Твои диалоги:**\nВыбери чат для продолжения или настройки:", reply_markup=kb, parse_mode="Markdown")
+    await query.message.edit_text(
+        "📁 **Твои диалоги:**\nНажми на чат для выбора в 1 клик или ⚙️ для настроек:",
+        reply_markup=kb,
+        parse_mode="Markdown"
+    )
     await query.answer()
 
 
@@ -50,8 +69,32 @@ async def cb_chats_page(query: CallbackQuery):
         chats, total = await repository.list_user_chats(session, user.id, page=page, page_size=5)
 
     kb = get_chats_pagination_keyboard(chats, page=page, total_count=total, active_chat_id=user.active_chat_id)
-    await query.message.edit_text("📁 **Твои диалоги:**\nВыбери чат для продолжения или настройки:", reply_markup=kb, parse_mode="Markdown")
+    await query.message.edit_text(
+        "📁 **Твои диалоги:**\nНажми на чат для выбора в 1 клик или ⚙️ для настроек:",
+        reply_markup=kb,
+        parse_mode="Markdown"
+    )
     await query.answer()
+
+
+@router.callback_query(F.data.startswith("chat:quick_activate:"))
+async def cb_chat_quick_activate(query: CallbackQuery):
+    parts = query.data.split(":")
+    chat_id = uuid.UUID(parts[2])
+    page = int(parts[3]) if len(parts) > 3 else 1
+
+    async with async_session_factory() as session:
+        await repository.set_active_chat(session, query.from_user.id, chat_id)
+        chat = await repository.get_chat(session, chat_id)
+        chats, total = await repository.list_user_chats(session, query.from_user.id, page=page, page_size=5)
+
+    kb = get_chats_pagination_keyboard(chats, page=page, total_count=total, active_chat_id=chat_id)
+    try:
+        await query.message.edit_reply_markup(reply_markup=kb)
+    except Exception:
+        pass
+    chat_title = chat.title if chat else "чат"
+    await query.answer(f"✅ Активен: {chat_title}")
 
 
 @router.callback_query(F.data.startswith("chats:delete_menu:"))
@@ -219,6 +262,7 @@ async def cb_chat_new(query: CallbackQuery, state: FSMContext):
 async def cb_model_selected(query: CallbackQuery, state: FSMContext):
     model_id = query.data.replace("model:select:", "")
     await state.update_data(chosen_model_id=model_id)
+    await add_temp_message_id(state, query.message.message_id)
     await state.set_state(ChatCreateState.waiting_for_title)
 
     await query.message.edit_text(
@@ -230,11 +274,11 @@ async def cb_model_selected(query: CallbackQuery, state: FSMContext):
 
 
 @router.message(ChatCreateState.waiting_for_title)
-async def fsm_chat_title_received(message: Message, state: FSMContext):
+async def fsm_chat_title_received(message: Message, bot: Bot, state: FSMContext):
     title = message.text.strip()[:64]
     data = await state.get_data()
     model_id = data.get("chosen_model_id")
-    await state.clear()
+    await cleanup_menus_and_reset_state(bot, message.chat.id, state, trigger_message_id=message.message_id)
 
     async with async_session_factory() as session:
         chat = await repository.create_chat(
@@ -254,7 +298,8 @@ async def fsm_chat_title_received(message: Message, state: FSMContext):
         "Напиши сообщение или отправь фото, чтобы начать общение!"
     )
     kb = get_chat_actions_keyboard(chat_id, is_active=True)
-    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    sent = await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    await track_menu_message(state, sent)
 
 
 # --- FSM: Переименование чата ---
@@ -263,6 +308,7 @@ async def fsm_chat_title_received(message: Message, state: FSMContext):
 async def cb_chat_rename(query: CallbackQuery, state: FSMContext):
     chat_id = uuid.UUID(query.data.split(":")[2])
     await state.update_data(renaming_chat_id=str(chat_id))
+    await add_temp_message_id(state, query.message.message_id)
     await state.set_state(ChatRenameState.waiting_for_new_title)
 
     await query.message.edit_text("✏️ Введи новое название для этого чата:", parse_mode="Markdown")
@@ -270,11 +316,11 @@ async def cb_chat_rename(query: CallbackQuery, state: FSMContext):
 
 
 @router.message(ChatRenameState.waiting_for_new_title)
-async def fsm_rename_received(message: Message, state: FSMContext):
+async def fsm_rename_received(message: Message, bot: Bot, state: FSMContext):
     new_title = message.text.strip()[:64]
     data = await state.get_data()
     chat_id = uuid.UUID(data.get("renaming_chat_id"))
-    await state.clear()
+    await cleanup_menus_and_reset_state(bot, message.chat.id, state, trigger_message_id=message.message_id)
 
     async with async_session_factory() as session:
         await repository.rename_chat(session, chat_id, new_title)
@@ -284,4 +330,5 @@ async def fsm_rename_received(message: Message, state: FSMContext):
         is_active = (user.active_chat_id == chat_id)
 
     kb = get_chat_actions_keyboard(chat_id, is_active=is_active)
-    await message.answer(f"✅ Чат успешно переименован в `{chat_title}`!", reply_markup=kb, parse_mode="Markdown")
+    sent = await message.answer(f"✅ Чат успешно переименован в `{chat_title}`!", reply_markup=kb, parse_mode="Markdown")
+    await track_menu_message(state, sent)

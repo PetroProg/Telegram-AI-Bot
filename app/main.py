@@ -5,6 +5,7 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 
 from app.core.config import settings
 from app.core.logger import setup_logger
@@ -49,6 +50,16 @@ async def main():
 
     logger.info("Starting bot long polling...")
     try:
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Перезапустить бота и меню"),
+            BotCommand(command="chats", description="Список диалогов (выбор в 1 клик)"),
+            BotCommand(command="new", description="Создать новый диалог"),
+            BotCommand(command="current", description="Активный чат и настройки"),
+            BotCommand(command="clean", description="Очистить экран Telegram (память сохраняется)"),
+            BotCommand(command="clear", description="Очистить контекст и сообщения чата"),
+            BotCommand(command="delete", description="Удалить чат"),
+            BotCommand(command="help", description="Справка"),
+        ])
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
