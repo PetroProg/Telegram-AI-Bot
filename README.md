@@ -1,95 +1,110 @@
-# 🤖 Telegram AI Bot
+# Telegram AI Bot
 
-Продвинутый персональный клиент для Telegram с поддержкой изолированных сессий (чатов) и мультимодельности (AI Horde Uncensored, OpenRouter Free Tier, Google Gemini).
+Personal Telegram client for multi-model AI conversations with isolated chat sessions, persistent PostgreSQL history, and vision support.
 
-## ✨ Ключевые возможности
+## Features
 
-- 💬 **Изолированные диалоги**: Создавайте неограниченное число независимых чатов (сессий). За каждым диалогом закрепляется собственная нейросеть.
-- 🔄 **Смена модели на лету**: Возможность в любой момент переключить модель у существующего чата.
-- 📱 **Двухуровневый UX**:
-  - Быстрое нижнее меню (Reply Keyboard): `💬 Мои чаты`, `➕ Новый чат`, `ℹ️ Активный чат`, `⚙️ Помощь`.
-  - Интерактивные Inline-кнопки под сообщениями: пагинация по 5 чатов на страницу, меню управления (активация, просмотр истории, очистка контекста, переименование, удаление).
-- 🧠 **Поддерживаемые модели**:
-  - 🏴‍☠️ **AI Horde (Qwen 2.5 72B / Stheno)** — 100% бесплатно и без цензуры (работает в анонимном режиме без регистрации).
-  - 🌐 **OpenRouter Auto Free** — автоматический роутинг на лучшие бесплатные облачные модели.
-  - ⚡ **NVIDIA Nemotron 3.5 Lightning Free** — сверхбыстрые и качественные ответы.
-  - 💎 **Google Gemma 4 31B Free** — открытая модель от Google без затрат.
-  - 📸 **Google Gemini 2.0 Flash** — анализ фотографий и скриншотов.
-- 👁 **Smart Vision Router**: Если вы отправляете фотографию или скриншот в чат с чисто текстовой моделью (например, Qwen или Nemotron), бот автоматически перенаправляет изображение в мультимодальную модель, получает анализ и аккуратно сохраняет результат в текущую ветку диалога.
-- 📄 **Умная обработка длинных ответов**: Если ответ ИИ превышает лимит Telegram (4096 символов), бот присылает краткое превью и прикрепляет полный файл в формате `response.md` с сохранением форматирования и блоков кода.
-- ⏳ **Плавный индикатор набора**: Во время ожидания ответа ИИ бот отображает естественный статус `печатает...`.
-- 🔒 **Строгий белый список**: Доступ к боту ограничен только указанными в `.env` Telegram User ID (`ALLOWED_USER_IDS`).
+- **Isolated Sessions**: Unlimited independent chats per user, each bound to a specific model with a configurable sliding context window.
+- **Model Providers**:
+  - **AI Horde**: Free uncensored models with strict model filtering, family-specific prompt templates (ChatML, Llama 3, Gemma), and automatic refusal retry.
+  - **OpenRouter**: Free-tier cloud models with automatic routing.
+  - **Google Gemini**: Multimodal and image analysis support.
+- **Smart Vision Routing**: Images sent to text-only chats are routed through a vision-capable model and stored back in the active chat context.
+- **Streamlined Telegram UI**:
+  - One-tap chat activation from the paginated chat list and dedicated settings view (model switch, rename, history preview, context clear, delete).
+  - Auto-cleanup of intermediate service menus and command triggers to keep the chat feed clean.
+  - Live status message (`Generating...`) edited in place into the final HTML-formatted response.
+  - Responses exceeding Telegram's 4096-character limit are truncated to a preview and attached as `response.md`.
+- **Chat Cleanup**:
+  - `/clean` clears recent physical messages from the Telegram feed (up to 500 messages within Telegram's 48-hour Bot API limit) while preserving database context.
+  - `/clear` wipes both Telegram messages and database conversation history for the active chat.
+- **Access Control**: Strict user whitelist via `ALLOWED_USER_IDS`.
 
----
+## Tech Stack
 
-## 🛠 Технологический стек
+- Python 3.12+
+- [aiogram 3.x](https://github.com/aiogram/aiogram) (async long polling)
+- PostgreSQL 16
+- SQLAlchemy 2.0 (`asyncio` + `asyncpg`)
+- Pydantic Settings v2
+- HTTPX (HTTP/2)
+- Docker & Docker Compose
 
-- **Язык**: Python 3.12+
-- **Фреймворк бота**: [aiogram 3.x](https://github.com/aiogram/aiogram) (асинхронный Long Polling)
-- **СУБД**: PostgreSQL 16
-- **ORM / Миграции**: SQLAlchemy 2.0 (asyncio + asyncpg)
-- **Валидация настроек**: Pydantic v2 Settings
-- **HTTP Клиент**: HTTPX (с поддержкой HTTP/2)
-- **Контейнеризация**: Docker & Docker Compose
+## Commands
 
----
+- `/start` — Initialize bot and display main keyboard
+- `/chats` — List chats (one-tap switch and settings)
+- `/new` — Create a new chat session
+- `/current` — Inspect and manage the active chat
+- `/clean` — Clear visible Telegram feed without deleting AI context
+- `/clear` — Clear active chat context and Telegram messages
+- `/delete` — Delete a chat session
+- `/help` — Show command reference
 
-## 🚀 Быстрый старт (Развертывание в Docker)
+## Deployment
 
-### 1. Клонирование репозитория
+### 1. Clone the repository
+
 ```bash
 git clone https://github.com/PetroProg/Telegram-AI-Bot.git
 cd Telegram-AI-Bot
 ```
 
-### 2. Настройка переменных окружения
-Скопируйте пример файла конфигурации:
+### 2. Configure environment variables
+
 ```bash
 cp .env.example .env
 ```
-Заполните обязательные поля:
-- `BOT_TOKEN` — токен от [@BotFather](https://t.me/BotFather)
-- `ALLOWED_USER_IDS` — ваш числовой Telegram User ID (например, `905176577`)
-- `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` — параметры подключения к PostgreSQL
-- `OPENROUTER_API_KEY` — ключ от OpenRouter для бесплатных моделей
-- `GEMINI_API_KEY` — ключ Google AI Studio (для анализа изображений)
 
-### 3. Запуск через Docker Compose
+Required variables in `.env`:
+
+- `BOT_TOKEN` — Telegram Bot API token from BotFather
+- `ALLOWED_USER_IDS` — Comma-separated Telegram numeric user IDs
+- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` — PostgreSQL connection settings
+- `OPENROUTER_API_KEY` — OpenRouter API key (for OpenRouter models)
+- `GEMINI_API_KEY` — Google AI Studio API key (for Gemini / Vision)
+- `AI_HORDE_API_KEY` — AI Horde API key (`0000000000` for anonymous access)
+
+### 3. Run with Docker Compose
+
+Ensure the external Docker network defined in `docker-compose.yml` (`news-ai_default`) exists, or adjust `docker-compose.yml` to match your PostgreSQL network.
+
 ```bash
 docker compose up -d --build
 ```
 
-Просмотр логов:
+Inspect logs:
+
 ```bash
 docker compose logs -f
 ```
 
----
-
-## 📂 Структура проекта
+## Project Structure
 
 ```text
 ├── app/
 │   ├── bot/
-│   │   ├── handlers/       # Обработчики команд, сообщений и фото
-│   │   ├── keyboards/      # Постоянные Reply и инлайн Inline клавиатуры
-│   │   ├── middlewares/    # Проверка белого списка (Whitelist)
-│   │   └── states.py       # FSM состояния (создание, переименование чатов)
+│   │   ├── handlers/       # Command, chat management, text, and photo handlers
+│   │   ├── keyboards/      # Reply and inline keyboards
+│   │   ├── middlewares/    # Whitelist authorization middleware
+│   │   ├── states.py       # FSM states (chat creation and renaming)
+│   │   └── ui.py           # Menu tracking and message cleanup helpers
 │   ├── core/
-│   │   ├── config.py       # Pydantic Settings с валидацией
-│   │   └── logger.py       # Настройка логирования
+│   │   ├── config.py       # Pydantic settings
+│   │   ├── logger.py       # Logging configuration
+│   │   └── text_utils.py   # Response sanitization and Markdown-to-HTML conversion
 │   ├── db/
-│   │   ├── base.py         # Declarative Base
-│   │   ├── models.py       # ORM модели: User, Chat, Message, ModelCatalog
-│   │   ├── repository.py   # Асинхронные CRUD операции с базой данных
-│   │   └── session.py      # Пул соединений и инициализация схемы
+│   │   ├── base.py         # Declarative base
+│   │   ├── models.py       # ORM models: User, Chat, Message, ModelCatalog
+│   │   ├── repository.py   # Async database operations
+│   │   └── session.py      # Async engine, session factory, schema initialization
 │   ├── providers/
-│   │   ├── base.py         # Базовый интерфейс LLM провайдера
-│   │   ├── horde.py        # Клиент к кластеру AI Horde (Uncensored)
-│   │   ├── openrouter.py   # Клиент к OpenRouter (Strictly Free)
-│   │   ├── gemini.py       # Клиент к Google Gemini (Vision & Multimodal)
-│   │   └── manager.py      # Умный роутинг моделей и фото (Smart Vision)
-│   └── main.py             # Точка входа в приложение
+│   │   ├── base.py         # Base LLM provider interface
+│   │   ├── horde.py        # AI Horde client (uncensored filtering & retry)
+│   │   ├── openrouter.py   # OpenRouter client
+│   │   ├── gemini.py       # Google Gemini Vision client
+│   │   └── manager.py      # Provider routing and Smart Vision fallback
+│   └── main.py             # Application entry point
 ├── .env.example
 ├── Dockerfile
 ├── docker-compose.yml
