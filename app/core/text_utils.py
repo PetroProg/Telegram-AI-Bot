@@ -13,6 +13,9 @@ def clean_model_response(text: str) -> str:
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     # Strip dangling <think> if model cut off before closing tag
     cleaned = re.sub(r"<think>.*", "", cleaned, flags=re.DOTALL)
+    # Strip leaked turn headers (e.g. <start_of_turn>model, <|turn>model, <|start_header_id|>assistant<|end_header_id|>)
+    cleaned = re.sub(r"<\|start_header_id\|>(?:system|user|assistant)<\|end_header_id\|>\s*", "", cleaned)
+    cleaned = re.sub(r"<(?:start_of_turn|\|turn)>(?:system|user|model|thought)\s*", "", cleaned)
     # Strip orphaned template/stop tokens
     for token in (
         "</think>",
@@ -22,6 +25,9 @@ def clean_model_response(text: str) -> str:
         "<|eot_id|>",
         "<|end_of_text|>",
         "<end_of_turn>",
+        "<start_of_turn>",
+        "<|turn>",
+        "<turn|>",
         "<eos>",
     ):
         cleaned = cleaned.replace(token, "")

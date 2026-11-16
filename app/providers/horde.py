@@ -112,7 +112,9 @@ class AIHordeProvider(BaseLLMProvider):
         low = model_name.lower()
         if "stheno" in low or "l3-" in low:
             return "llama3"
-        if "gemma" in low or "g4-" in low:
+        if "g4-" in low or "gemma-4" in low or "gemma4" in low:
+            return "gemma4"
+        if "gemma" in low:
             return "gemma"
         return "chatml"
 
@@ -136,6 +138,14 @@ class AIHordeProvider(BaseLLMProvider):
             parts.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
             return "".join(parts), ["<|eot_id|>", "<|end_of_text|>"]
 
+        if family == "gemma4":
+            parts = [f"<|turn>system\n{sys_p}<turn|>\n"]
+            for msg in messages:
+                role = "user" if msg.role == "user" else "model"
+                parts.append(f"<|turn>{role}\n{msg.content}<turn|>\n")
+            parts.append("<|turn>model\n")
+            return "".join(parts), ["<turn|>", "<|turn>user", "<eos>"]
+
         if family == "gemma":
             parts = [f"<start_of_turn>user\n[System Instructions: {sys_p}]\n\n"]
             for idx, msg in enumerate(messages):
@@ -145,7 +155,7 @@ class AIHordeProvider(BaseLLMProvider):
                     role = "user" if msg.role == "user" else "model"
                     parts.append(f"<start_of_turn>{role}\n{msg.content}<end_of_turn>\n")
             parts.append("<start_of_turn>model\n")
-            return "".join(parts), ["<end_of_turn>", "<eos>"]
+            return "".join(parts), ["<end_of_turn>", "<start_of_turn>user", "<eos>"]
 
         # Default: ChatML (Qwen, Dolphin, Rocinante, Magnum)
         parts = [f"<|im_start|>system\n{sys_p}<|im_end|>"]
@@ -253,17 +263,22 @@ class AIHordeProvider(BaseLLMProvider):
                 else:
                     family_groups.append((fam, [m]))
 
+            last_user_text = next(
+                (m.content.strip() for m in reversed(messages) if m.role == "user"),
+                "",
+            )
             last_reply = ""
             for attempt, (family, group_models) in enumerate(family_groups[:2], start=1):
                 reply, used_model = await self._submit_and_poll(
                     client, headers, group_models, family, messages, system_prompt
                 )
                 last_reply = reply
-                if not self._is_refusal(reply):
+                is_echo_or_empty = (not reply) or (last_user_text and reply.strip() == last_user_text)
+                if not is_echo_or_empty and not self._is_refusal(reply):
                     return reply
 
                 logger.warning(
-                    f"AI Horde model '{used_model}' (attempt {attempt}) returned refusal. Retrying with next model group..."
+                    f"AI Horde model '{used_model}' (attempt {attempt}) returned refusal/echo/empty. Retrying with next model group..."
                 )
 
             return last_reply
