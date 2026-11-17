@@ -37,6 +37,8 @@ REFUSAL_MARKERS = (
     "извините, но я",
     "как искусственный интеллект",
     "противоречит правилам",
+    "противоречит этическим принципам",
+    "незаконным действием",
     "не могу помочь с этим",
     "не могу выполнить этот запрос",
 )
@@ -59,15 +61,19 @@ class AIHordeProvider(BaseLLMProvider):
         fast_bonus = 1 if eta <= 15 else 0
         # Prefer larger/stronger uncensored models
         size_score = 0
-        if any(s in name for s in ("72b", "70b", "32b", "31b", "27b", "26b")):
+        if any(s in name for s in ("72b", "70b", "35b", "32b", "31b", "27b", "26b")):
             size_score = 3
         elif any(s in name for s in ("16b", "12b", "11b", "9b")):
             size_score = 2
         elif "8b" in name:
             size_score = 1
 
+        # Prefer explicitly abliterated/uncensored/heretic models over RP tunes
+        hard_uncensored_bonus = 2 if any(
+            k in name for k in ("abliterated", "heretic", "uncensored", "aggressive", "dolphin", "stheno")
+        ) else 0
         qwen_bonus = 1 if "qwen" in name else 0
-        return (fast_bonus, qwen_bonus + size_score, count - eta)
+        return (fast_bonus, hard_uncensored_bonus + qwen_bonus + size_score, count - eta)
 
     async def _get_active_models(self, client: httpx.AsyncClient) -> List[str]:
         """Fetch currently online strictly uncensored/abliterated text models on AI Horde."""
@@ -166,10 +172,8 @@ class AIHordeProvider(BaseLLMProvider):
         return "\n".join(parts), ["<|im_end|>", "<|endoftext|>"]
 
     def _is_refusal(self, text: str) -> bool:
-        low = text.lower().strip()
-        if len(low) > 450:
-            return False
-        return any(marker in low for marker in REFUSAL_MARKERS)
+        head = text.lower().strip()[:320]
+        return any(marker in head for marker in REFUSAL_MARKERS)
 
     async def _submit_and_poll(
         self,
@@ -268,7 +272,7 @@ class AIHordeProvider(BaseLLMProvider):
                 "",
             )
             last_reply = ""
-            for attempt, (family, group_models) in enumerate(family_groups[:2], start=1):
+            for attempt, (family, group_models) in enumerate(family_groups[:3], start=1):
                 reply, used_model = await self._submit_and_poll(
                     client, headers, group_models, family, messages, system_prompt
                 )

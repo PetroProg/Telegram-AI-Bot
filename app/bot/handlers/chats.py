@@ -173,8 +173,9 @@ async def cb_chat_history(query: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("chat:change_model:"))
-async def cb_chat_change_model(query: CallbackQuery):
+async def cb_chat_change_model(query: CallbackQuery, state: FSMContext):
     chat_id = uuid.UUID(query.data.split(":")[2])
+    await state.update_data(changing_model_chat_id=str(chat_id))
     async with async_session_factory() as session:
         models = await repository.get_active_models(session)
 
@@ -183,13 +184,22 @@ async def cb_chat_change_model(query: CallbackQuery):
     await query.answer()
 
 
-@router.callback_query(F.data.startswith("chat:set_model:"))
-async def cb_chat_set_model(query: CallbackQuery):
-    parts = query.data.split(":")
-    chat_id = uuid.UUID(parts[2])
-    model_id = ":".join(parts[3:])
+@router.callback_query(F.data.startswith("csm:"))
+async def cb_chat_set_model(query: CallbackQuery, state: FSMContext):
+    model_id = query.data[4:]
+    data = await state.get_data()
+    raw_chat_id = data.get("changing_model_chat_id")
 
     async with async_session_factory() as session:
+        if raw_chat_id:
+            chat_id = uuid.UUID(raw_chat_id)
+        else:
+            active_chat = await repository.get_active_chat(session, query.from_user.id)
+            if not active_chat:
+                await query.answer("Чат не найден, откройте его заново.", show_alert=True)
+                return
+            chat_id = active_chat.id
+
         await repository.update_chat_model(session, chat_id, model_id)
         chat = await repository.get_chat(session, chat_id)
         user = await repository.get_or_create_user(session, query.from_user.id)

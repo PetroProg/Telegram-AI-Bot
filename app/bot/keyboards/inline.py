@@ -144,7 +144,7 @@ def get_models_selection_keyboard(
 ) -> InlineKeyboardMarkup:
     buttons = []
     for model in models:
-        prefix = f"chat:set_model:{chat_id}:{model.id}" if action == "change" else f"model:select:{model.id}"
+        prefix = f"csm:{model.id}" if action == "change" else f"model:select:{model.id}"
         buttons.append([
             InlineKeyboardButton(text=model.display_name, callback_data=prefix)
         ])
