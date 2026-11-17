@@ -1,4 +1,4 @@
-from typing import Set
+from typing import Optional, Set
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -39,6 +39,15 @@ class Settings(BaseSettings):
         if not self.ALLOWED_USER_IDS:
             return set()
         return {int(uid.strip()) for uid in self.ALLOWED_USER_IDS.split(",") if uid.strip()}
+
+    @property
+    def owner_user_id(self) -> Optional[int]:
+        if not self.ALLOWED_USER_IDS:
+            return None
+        for uid in self.ALLOWED_USER_IDS.split(","):
+            if uid.strip():
+                return int(uid.strip())
+        return None
 
 
 settings = Settings()
