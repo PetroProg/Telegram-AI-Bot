@@ -5,6 +5,7 @@ from typing import List, Optional
 import httpx
 
 from app.core.config import settings
+from app.core.text_utils import clean_model_response
 from app.providers.base import BaseLLMProvider, ChatTurn
 
 logger = logging.getLogger(__name__)
@@ -81,8 +82,8 @@ class GeminiProvider(BaseLLMProvider):
                     if not candidates:
                         raise RuntimeError("Gemini returned no candidates (content may be filtered)")
                     parts = candidates[0].get("content", {}).get("parts", [])
-                    text_parts = [p.get("text", "") for p in parts if "text" in p]
-                    return "".join(text_parts).strip()
+                    text_parts = [p.get("text", "") for p in parts if "text" in p and not p.get("thought")]
+                    return clean_model_response("".join(text_parts))
 
                 if resp.status_code == 429:
                     logger.warning(f"Gemini 429 Too Many Requests. Retrying in {backoff}s (attempt {attempt+1}/{max_retries})...")

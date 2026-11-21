@@ -4,21 +4,49 @@ import re
 
 def clean_model_response(text: str) -> str:
     """
-    Cleans model response by stripping reasoning blocks (<think>...</think>),
-    dangling thought tags, and extra chat template artifacts.
+    Cleans model response by stripping reasoning blocks (<think>...</think>,
+    <thought>...</thought>, <|thought>...</thought|>), dangling thought tags,
+    and extra chat template artifacts.
     """
     if not text:
         return ""
-    # Strip full <think>...</think> tags
-    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-    # Strip dangling <think> if model cut off before closing tag
-    cleaned = re.sub(r"<think>.*", "", cleaned, flags=re.DOTALL)
+    # Strip full <think>...</think> and <thought>...</thought> blocks
+    cleaned = re.sub(
+        r"<(?:\|)?(?:think|thought)(?:\|)?>.*?</(?:\|)?(?:think|thought)(?:\|)?>",
+        "",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    # Strip Gemma 4 / turn-based reasoning blocks: <|turn>thought ... (up to <|turn>model or <turn|>)
+    cleaned = re.sub(
+        r"<(?:start_of_turn|\|turn)>thought\b.*?(?:<(?:start_of_turn|\|turn)>model\s*|<turn\|>|<end_of_turn>)",
+        "",
+        cleaned,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    # If a closing </think> or </thought> appears without an opening tag (e.g. prompt pre-opened it),
+    # strip everything up to and including the closing tag
+    cleaned = re.sub(
+        r"^.*?</(?:\|)?(?:think|thought)(?:\|)?>",
+        "",
+        cleaned,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    # Strip standalone leading <thought> or <think> tags (or dangling blocks if no answer follows)
+    cleaned = re.sub(r"^\s*<(?:\|)?(?:think|thought)(?:\|)?>\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"<(?:\|)?(?:think|thought)(?:\|)?>.*", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
     # Strip leaked turn headers (e.g. <start_of_turn>model, <|turn>model, <|start_header_id|>assistant<|end_header_id|>)
     cleaned = re.sub(r"<\|start_header_id\|>(?:system|user|assistant)<\|end_header_id\|>\s*", "", cleaned)
     cleaned = re.sub(r"<(?:start_of_turn|\|turn)>(?:system|user|model|thought)\s*", "", cleaned)
     # Strip orphaned template/stop tokens
     for token in (
         "</think>",
+        "<think>",
+        "</thought>",
+        "<thought>",
+        "<|thought|>",
+        "<|thought>",
+        "<thought|>",
         "<|im_end|>",
         "<|im_start|>",
         "<|endoftext|>",
