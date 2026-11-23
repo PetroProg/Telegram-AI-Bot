@@ -53,7 +53,7 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
 @router.message(F.text == "💬 Мои чаты")
 @router.message(Command("chats"))
 async def handle_my_chats(message: Message, bot: Bot, state: FSMContext):
-    await cleanup_menus_and_reset_state(bot, message.chat.id, state, trigger_message_id=message.message_id)
+    await cleanup_menus_and_reset_state(bot, message.chat.id, state)  # keep trigger: deleting the reply-button message drops the reply keyboard in Telegram clients
     async with async_session_factory() as session:
         user = await repository.get_or_create_user(session, message.from_user.id)
         chats, total = await repository.list_user_chats(session, user.id, page=1, page_size=5)
@@ -80,7 +80,7 @@ async def handle_my_chats(message: Message, bot: Bot, state: FSMContext):
 @router.message(F.text == "➕ Новый чат")
 @router.message(Command("new"))
 async def handle_new_chat(message: Message, bot: Bot, state: FSMContext):
-    await cleanup_menus_and_reset_state(bot, message.chat.id, state, trigger_message_id=message.message_id)
+    await cleanup_menus_and_reset_state(bot, message.chat.id, state)  # keep trigger: deleting the reply-button message drops the reply keyboard in Telegram clients
     async with async_session_factory() as session:
         models = await repository.get_active_models(session)
 
@@ -96,7 +96,7 @@ async def handle_new_chat(message: Message, bot: Bot, state: FSMContext):
 @router.message(F.text == "ℹ️ Активный чат")
 @router.message(Command("current"))
 async def handle_active_chat(message: Message, bot: Bot, state: FSMContext):
-    await cleanup_menus_and_reset_state(bot, message.chat.id, state, trigger_message_id=message.message_id)
+    await cleanup_menus_and_reset_state(bot, message.chat.id, state)  # keep trigger: deleting the reply-button message drops the reply keyboard in Telegram clients
     async with async_session_factory() as session:
         active_chat = await repository.get_active_chat(session, message.from_user.id)
         if not active_chat:
@@ -250,7 +250,7 @@ async def handle_clean_screen(message: Message, bot: Bot, state: FSMContext):
 @router.message(F.text == "⚙️ Помощь")
 @router.message(Command("help"))
 async def handle_help(message: Message, bot: Bot, state: FSMContext):
-    await cleanup_menus_and_reset_state(bot, message.chat.id, state, trigger_message_id=message.message_id)
+    await cleanup_menus_and_reset_state(bot, message.chat.id, state)  # keep trigger: deleting the reply-button message drops the reply keyboard in Telegram clients
     text = (
         "📖 **Справка по боту:**\n\n"
         "• Отправь **текст** — бот ответит в контексте активного чата.\n"
