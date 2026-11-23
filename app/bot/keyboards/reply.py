@@ -15,4 +15,4 @@ def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
             KeyboardButton(text="⚙️ Помощь"),
         ],
     ]
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, is_persistent=True)

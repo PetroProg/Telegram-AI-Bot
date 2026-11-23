@@ -46,8 +46,8 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
     else:
         text += "💡 У тебя пока нет активного диалога. Нажми **➕ Новый чат**, чтобы начать!"
 
-    sent = await message.answer(text, reply_markup=get_main_reply_keyboard(), parse_mode="Markdown")
-    await track_menu_message(state, sent)
+    # Not tracked: this message anchors the reply keyboard and must not be auto-deleted
+    await message.answer(text, reply_markup=get_main_reply_keyboard(), parse_mode="Markdown")
 
 
 @router.message(F.text == "💬 Мои чаты")
@@ -154,6 +154,7 @@ async def handle_clear_command(message: Message, bot: Bot):
         f"🧹 **Лента переписки и контекст диалога «{chat_title}» полностью очищены!**\n"
         f"Удалено сообщений: {deleted_count}.\n"
         "Можно продолжать общение с чистого листа ✨",
+        reply_markup=get_main_reply_keyboard(),
         parse_mode="Markdown"
     )
 
@@ -242,8 +243,8 @@ async def handle_clean_screen(message: Message, bot: Bot, state: FSMContext):
     else:
         text = "🫧 **Экран очищен!**\nВыбери или создай чат, чтобы начать общение."
 
-    sent = await message.answer(text, reply_markup=get_main_reply_keyboard(), parse_mode="Markdown")
-    await track_menu_message(state, sent)
+    # Not tracked: this message anchors the reply keyboard and must not be auto-deleted
+    await message.answer(text, reply_markup=get_main_reply_keyboard(), parse_mode="Markdown")
 
 
 @router.message(F.text == "⚙️ Помощь")
@@ -261,5 +262,4 @@ async def handle_help(message: Message, bot: Bot, state: FSMContext):
         "• Для переключения между диалогами используй кнопку **💬 Мои чаты**.\n"
         "• Создавай сколько угодно изолированных чатов под разные задачи!\n"
     )
-    sent = await message.answer(text, parse_mode="Markdown")
-    await track_menu_message(state, sent)
+    await message.answer(text, reply_markup=get_main_reply_keyboard(), parse_mode="Markdown")
