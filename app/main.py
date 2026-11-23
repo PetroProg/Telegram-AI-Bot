@@ -5,7 +5,7 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, BotCommandScopeChat
 
 from app.core.config import settings
 from app.core.logger import setup_logger
@@ -55,7 +55,7 @@ async def main():
 
     logger.info("Starting bot long polling...")
     try:
-        await bot.set_my_commands([
+        base_commands = [
             BotCommand(command="start", description="Перезапустить бота и меню"),
             BotCommand(command="chats", description="Список диалогов (выбор в 1 клик)"),
             BotCommand(command="new", description="Создать новый диалог"),
@@ -64,7 +64,24 @@ async def main():
             BotCommand(command="clear", description="Очистить контекст и сообщения чата"),
             BotCommand(command="delete", description="Удалить чат"),
             BotCommand(command="help", description="Справка"),
-        ])
+        ]
+        await bot.set_my_commands(base_commands)
+
+        owner_chat_ids = {
+            uid for uid in (settings.owner_user_id, settings.REPORT_CHAT_ID) if uid is not None
+        }
+        owner_commands = [
+            *base_commands,
+            BotCommand(command="stats", description="Статистика промптов за 7 дней"),
+        ]
+        for owner_chat_id in owner_chat_ids:
+            try:
+                await bot.set_my_commands(
+                    owner_commands,
+                    scope=BotCommandScopeChat(chat_id=owner_chat_id),
+                )
+            except Exception as e:
+                logger.warning("Failed to set owner commands menu for chat_id=%s: %s", owner_chat_id, e)
         await bot.delete_webhook(drop_pending_updates=True)
 
         if settings.WEEKLY_REPORT_ENABLED:
