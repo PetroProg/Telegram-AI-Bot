@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import (
     BigInteger,
+    Integer,
     String,
     Text,
     Boolean,
@@ -97,3 +98,34 @@ class Message(Base):
     __table_args__ = (
         Index("idx_messages_chat_created", "chat_id", "created_at"),
     )
+
+
+class PromptLog(Base):
+    """Append-only usage log of user prompts preserved even if chats are cleared or deleted."""
+    __tablename__ = "prompt_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    chat_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("chats.id", ondelete="SET NULL"), nullable=True
+    )
+    model_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    has_image: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("idx_prompt_logs_created_user", "created_at", "user_id"),
+    )
+
+
+class WeeklyReportRun(Base):
+    """Tracks delivered weekly reports by schedule date key to guarantee idempotency across restarts."""
+    __tablename__ = "weekly_report_runs"
+
+    report_key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    total_prompts: Mapped[int] = mapped_column(Integer, default=0)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

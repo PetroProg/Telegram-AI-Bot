@@ -1,17 +1,30 @@
 import uuid
-from typing import Optional, List, Tuple
-from sqlalchemy import select, func, delete, update
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Optional, List, Tuple
+from sqlalchemy import select, func, delete, update, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models import User, Chat, Message, ModelCatalog
+from app.db.models import User, Chat, Message, ModelCatalog, PromptLog, WeeklyReportRun
+
+_UNSET: Any = object()
+
+
+@dataclass(frozen=True)
+class UserPromptStat:
+    user_id: int
+    username: Optional[str]
+    first_name: Optional[str]
+    total_prompts: int
+    photo_prompts: int
 
 
 async def get_or_create_user(
     session: AsyncSession,
     user_id: int,
-    username: Optional[str] = None,
-    first_name: Optional[str] = None
+    username: Any = _UNSET,
+    first_name: Any = _UNSET
 ) -> User:
     stmt = select(User).where(User.id == user_id)
     result = await session.execute(stmt)
@@ -19,18 +32,22 @@ async def get_or_create_user(
     if not user:
         user = User(
             id=user_id,
-            username=username,
-            first_name=first_name,
+            username=None if username is _UNSET else username,
+            first_name=None if first_name is _UNSET else first_name,
             is_allowed=True
         )
         session.add(user)
         await session.commit()
         await session.refresh(user)
     else:
-        # Update username/first_name if changed
-        if user.username != username or user.first_name != first_name:
+        changed = False
+        if username is not _UNSET and user.username != username:
             user.username = username
+            changed = True
+        if first_name is not _UNSET and user.first_name != first_name:
             user.first_name = first_name
+            changed = True
+        if changed:
             await session.commit()
     return user
 
@@ -251,4 +268,97 @@ async def seed_default_models(session: AsyncSession):
         existing = await session.get(ModelCatalog, model.id)
         if not existing:
             session.add(model)
+    await session.commit()
+
+
+async def log_prompt(
+    session: AsyncSession,
+    user_id: int,
+    username: Optional[str] = None,
+    first_name: Optional[str] = None,
+    chat_id: Optional[uuid.UUID] = None,
+    model_id: Optional[str] = None,
+    has_image: bool = False,
+) -> PromptLog:
+    """Record a user prompt event in append-only prompt_logs and sync user profile metadata."""
+    user = await session.get(User, user_id)
+    if user:
+        if user.username != username:
+            user.username = username
+        if user.first_name != first_name:
+            user.first_name = first_name
+
+    entry = PromptLog(
+        user_id=user_id,
+        username=username,
+        first_name=first_name,
+        chat_id=chat_id,
+        model_id=model_id,
+        has_image=has_image,
+    )
+    session.add(entry)
+    await session.commit()
+    await session.refresh(entry)
+    return entry
+
+
+async def get_prompt_stats(
+    session: AsyncSession,
+    start_dt: datetime,
+    end_dt: datetime,
+) -> List[UserPromptStat]:
+    """Aggregate prompt counts per user for the half-open interval [start_dt, end_dt)."""
+    stmt = (
+        select(
+            PromptLog.user_id,
+            User.username.label("current_username"),
+            User.first_name.label("current_first_name"),
+            func.max(PromptLog.username).label("snapshot_username"),
+            func.max(PromptLog.first_name).label("snapshot_first_name"),
+            func.count(PromptLog.id).label("total_prompts"),
+            func.sum(case((PromptLog.has_image.is_(True), 1), else_=0)).label("photo_prompts"),
+        )
+        .outerjoin(User, User.id == PromptLog.user_id)
+        .where(PromptLog.created_at >= start_dt, PromptLog.created_at < end_dt)
+        .group_by(PromptLog.user_id, User.username, User.first_name)
+        .order_by(func.count(PromptLog.id).desc(), PromptLog.user_id.asc())
+    )
+    result = await session.execute(stmt)
+    stats: List[UserPromptStat] = []
+    for row in result.all():
+        stats.append(
+            UserPromptStat(
+                user_id=row.user_id,
+                username=row.current_username or row.snapshot_username,
+                first_name=row.current_first_name or row.snapshot_first_name,
+                total_prompts=int(row.total_prompts or 0),
+                photo_prompts=int(row.photo_prompts or 0),
+            )
+        )
+    return stats
+
+
+async def has_weekly_report_run(session: AsyncSession, report_key: str) -> bool:
+    stmt = select(WeeklyReportRun.report_key).where(WeeklyReportRun.report_key == report_key)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none() is not None
+
+
+async def record_weekly_report_run(
+    session: AsyncSession,
+    report_key: str,
+    period_start: datetime,
+    period_end: datetime,
+    total_prompts: int,
+) -> None:
+    existing = await session.get(WeeklyReportRun, report_key)
+    if existing:
+        return
+    run = WeeklyReportRun(
+        report_key=report_key,
+        period_start=period_start,
+        period_end=period_end,
+        total_prompts=total_prompts,
+    )
+    session.add(run)
     await session.commit()

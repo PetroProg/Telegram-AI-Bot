@@ -12,7 +12,8 @@ from app.core.logger import setup_logger
 from app.db.session import init_db, async_session_factory
 from app.db.repository import seed_default_models
 from app.bot.middlewares.auth import WhitelistMiddleware
-from app.bot.handlers import start, chats, messages
+from app.bot.handlers import start, chats, admin, messages
+from app.services.weekly_report import weekly_report_loop
 
 logger = logging.getLogger("main")
 
@@ -46,7 +47,11 @@ async def main():
     # 4. Include Routers
     dp.include_router(start.router)
     dp.include_router(chats.router)
+    dp.include_router(admin.router)
     dp.include_router(messages.router)
+
+    report_stop_event = asyncio.Event()
+    report_task = None
 
     logger.info("Starting bot long polling...")
     try:
@@ -61,8 +66,18 @@ async def main():
             BotCommand(command="help", description="Справка"),
         ])
         await bot.delete_webhook(drop_pending_updates=True)
+
+        if settings.WEEKLY_REPORT_ENABLED:
+            report_task = asyncio.create_task(weekly_report_loop(bot, report_stop_event))
+
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        if report_task is not None:
+            report_stop_event.set()
+            try:
+                await asyncio.wait_for(report_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                report_task.cancel()
         await bot.session.close()
         logger.info("Bot stopped.")
 

@@ -100,6 +100,19 @@ async def handle_user_text(message: Message, bot: Bot):
         await repository.add_message(
             session, chat_id, role="user", content=user_text, telegram_message_id=message.message_id
         )
+        try:
+            await repository.log_prompt(
+                session=session,
+                user_id=user_id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+                chat_id=chat_id,
+                model_id=model.id if model else active_chat.model_id,
+                has_image=False,
+            )
+        except Exception:
+            await session.rollback()
+            logger.exception("Failed to log text prompt for user_id=%s", user_id)
 
         # 2. Fetch context (sliding window of last 10 messages)
         history = await repository.get_chat_context(session, chat_id, limit=settings.DEFAULT_CONTEXT_LIMIT)
@@ -166,6 +179,19 @@ async def handle_user_photo(message: Message, bot: Bot):
         await repository.add_message(
             session, chat_id, role="user", content=caption, has_image=True, telegram_message_id=message.message_id
         )
+        try:
+            await repository.log_prompt(
+                session=session,
+                user_id=user_id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+                chat_id=chat_id,
+                model_id=model.id if model else active_chat.model_id,
+                has_image=True,
+            )
+        except Exception:
+            await session.rollback()
+            logger.exception("Failed to log photo prompt for user_id=%s", user_id)
 
         history = await repository.get_chat_context(session, chat_id, limit=settings.DEFAULT_CONTEXT_LIMIT)
 
