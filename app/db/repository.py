@@ -238,14 +238,6 @@ async def seed_default_models(session: AsyncSession):
             supports_vision=False,
             is_active=True
         ),
-        # OpenRouter NVIDIA Nemotron 3.5 Lightning Free
-        ModelCatalog(
-            id="nvidia/nemotron-3.5-lightning:free",
-            provider="openrouter",
-            display_name="⚡ Nemotron 3.5 Lightning (Free)",
-            supports_vision=False,
-            is_active=True
-        ),
         # OpenRouter Gemma 4 31B Free
         ModelCatalog(
             id="google/gemma-4-31b-it:free",
@@ -268,6 +260,12 @@ async def seed_default_models(session: AsyncSession):
         existing = await session.get(ModelCatalog, model.id)
         if not existing:
             session.add(model)
+
+    # Retired models: hide from the catalog (kept in DB to preserve chat references)
+    for retired_id in ("nvidia/nemotron-3.5-lightning:free",):
+        retired = await session.get(ModelCatalog, retired_id)
+        if retired and retired.is_active:
+            retired.is_active = False
     await session.commit()
 
 

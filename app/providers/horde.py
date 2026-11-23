@@ -237,7 +237,7 @@ class AIHordeProvider(BaseLLMProvider):
 
         raise RuntimeError(
             "AI Horde сейчас перегружен (очередь волонтеров превысила таймаут). "
-            "Попробуйте через минуту или переключите модель чата на OpenRouter / Nemotron через меню /chats."
+            "Попробуйте через минуту или переключите модель чата на OpenRouter через меню /chats."
         )
 
     async def generate_response(
