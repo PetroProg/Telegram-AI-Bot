@@ -48,7 +48,8 @@ class ProviderManager:
                 vision_model = "gemini-2.0-flash"
             else:
                 vision_provider = self.openrouter
-                vision_model = "nvidia/nemotron-3.5-super-vl:free"
+                # OpenRouter free router picks a free model that supports image input
+                vision_model = "openrouter/free"
 
             try:
                 return await vision_provider.generate_response(

@@ -261,11 +261,14 @@ async def seed_default_models(session: AsyncSession):
         if not existing:
             session.add(model)
 
-    # Retired models: hide from the catalog (kept in DB to preserve chat references)
-    for retired_id in ("nvidia/nemotron-3.5-lightning:free",):
-        retired = await session.get(ModelCatalog, retired_id)
-        if retired and retired.is_active:
-            retired.is_active = False
+    # Retired models: move existing chats to the fallback model, then delete from the catalog
+    retired_ids = ("nvidia/nemotron-3.5-lightning:free",)
+    fallback_id = "openrouter/free"
+    await session.flush()
+    await session.execute(
+        update(Chat).where(Chat.model_id.in_(retired_ids)).values(model_id=fallback_id)
+    )
+    await session.execute(delete(ModelCatalog).where(ModelCatalog.id.in_(retired_ids)))
     await session.commit()
 
 
